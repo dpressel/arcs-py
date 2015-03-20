@@ -68,7 +68,7 @@ class GreedyDepParser:
     def legal(self, conf):
         pass
 
-    # LUT = ["SHIFT", 'RIGHT', 'LEFT', 'REDUCE']
+    LUT = ["SHIFT", 'RIGHT', 'LEFT', 'REDUCE']
 
     def update(self, truth, guess, features):
         def update_feature_label(label, fj, v):
@@ -148,9 +148,12 @@ class GreedyDepParser:
         conf = self.initial(sentence)
         gold_conf = GreedyDepParser.get_gold_conf(sentence)
         train_correct = train_all = 0
-        while not GreedyDepParser.terminal(conf):
 
+        n = 0
+        while not GreedyDepParser.terminal(conf):
+            n += 1
             legal_transitions = self.legal(conf)
+            # print('LEGAL ', ' '.join([self.LUT[p] for p in legal_transitions]))
             features = self.fx(conf)
             scores = self.model.score(features)
             t_p = max(legal_transitions, key=lambda p: scores[p])
@@ -388,38 +391,179 @@ class ArcEagerDepParser(GreedyDepParser):
         conf.stack.pop()
         return conf
 
+
+class ArcHybridDepParser(GreedyDepParser):
+
+    def __init__(self, m, f):
+        GreedyDepParser.__init__(self, m, f)
+        self.transition_funcs[ArcHybridDepParser.SHIFT] = ArcHybridDepParser.shift
+        self.transition_funcs[ArcHybridDepParser.RIGHT] = ArcHybridDepParser.arc_right
+        self.transition_funcs[ArcHybridDepParser.LEFT] = ArcHybridDepParser.arc_left
+        self.root = None
+
+    def initial(self, sentence):
+        self.root = len(sentence)
+        return Configuration(range(len(sentence)) + [len(sentence)], sentence)
+        # return Configuration([self.root] + range(len(sentence)), sentence)
+
+    def legal(self, conf):
+        transitions = []
+        left_ok = right_ok = shift_ok = True
+
+        if len(conf.stack) < 2:
+            right_ok = False
+        if len(conf.stack) == 0 or conf.stack[-1] == self.root:
+            left_ok = False
+
+        if shift_ok is True:
+            transitions.append(GreedyDepParser.SHIFT)
+        if right_ok is True:
+            transitions.append(GreedyDepParser.RIGHT)
+        if left_ok is True:
+            transitions.append(GreedyDepParser.LEFT)
+        return transitions
+
+    @staticmethod
+    def zero_cost_right(conf, gold_conf):
+        """
+        Adding the arc (s1, s0) and popping s0 from the stack means that s0 will not be able
+        to acquire heads or deps from B.  The cost is the number of arcs in gold_conf of the form
+        (s0, d) and (h, s0) where h, d in B.  For non-zero cost moves, we are looking simply for
+        (s0, b) or (b, s0) for all b in B
+        :param conf:
+        :param gold_conf:
+        :return:
+        """
+        s0 = conf.stack[-1]
+        for b in conf.buffer:
+            if (b in gold_conf.heads and gold_conf.heads[b] is s0) or gold_conf.heads[s0] is b:
+                return False
+        return True
+
+
+    @staticmethod
+    def zero_cost_left(conf, gold_conf):
+        """
+        Adding the arc (b, s0) and popping s0 from the stack means that s0 will not be able to acquire
+        heads from H = {s1} U B and will not be able to acquire dependents from B U b, therefore the cost is
+        the number of arcs in T of form (s0, d) or (h, s0), h in H, d in D
+
+        To have cost, then, only one instance must occur
+
+        :param conf:
+        :param gold_conf:
+        :return:
+        """
+
+        s0 = conf.stack[-1]
+        s1 = len(conf.stack) > 2 and conf.stack[-2] or None
+
+        if gold_conf.deps[s0] in conf.buffer:
+            return False
+
+        H = conf.buffer[1:] + [s1]
+        if gold_conf.heads[s0] in H:
+            return False
+        return True
+
+    @staticmethod
+    def zero_cost_shift(conf, gold_conf):
+        """
+        Pushing b onto the stack means that b will not be able to acquire
+        heads from H = {s1} U S and will not be able to acquire deps from
+        D = {s0, s1} U S
+        :param conf:
+        :param gold_conf:
+        :return:
+        """
+        if len(conf.buffer) < 1:
+            return False
+        if len(conf.stack) == 0:
+            return True
+
+        b = conf.buffer[0]
+        # Cost is the number of arcs in T of the form (s0, d) and (h, s0) for h in H and d in D
+        if b in gold_conf.heads and gold_conf.heads[b] in conf.stack[0:-1]:
+            return False
+        ll = len(filter(lambda dep: dep in conf.stack, gold_conf.deps[b]))
+        return ll == 0
+
+    @staticmethod
+    def shift(conf):
+        b = conf.buffer[0]
+        del conf.buffer[0]
+        conf.stack.append(b)
+        return conf
+
+    @staticmethod
+    def arc_right(conf):
+        s0 = conf.stack.pop()
+        s1 = conf.stack[-1]
+        conf.arcs.append((s1, s0))
+        return conf
+
+    @staticmethod
+    def arc_left(conf):
+        #  pop the top off the stack, link the arc, from the buffer
+        s0 = conf.stack.pop()
+        b = conf.buffer[0]
+        conf.arcs.append((b, s0))
+        return conf
+
+    def dyn_oracle(self, gold_conf, conf, legal_transitions):
+        options = []
+        if GreedyDepParser.SHIFT in legal_transitions and ArcHybridDepParser.zero_cost_shift(conf, gold_conf):
+            options.append(GreedyDepParser.SHIFT)
+        if GreedyDepParser.RIGHT in legal_transitions and ArcHybridDepParser.zero_cost_right(conf, gold_conf):
+            options.append(GreedyDepParser.RIGHT)
+        if GreedyDepParser.LEFT in legal_transitions and ArcHybridDepParser.zero_cost_left(conf, gold_conf):
+            options.append(GreedyDepParser.LEFT)
+        return options
+
 if __name__ == '__main__':
 
-    def filter_non_projective(gold):
-        gold_proj = []
-        for s in gold:
-            gold_conf = GreedyDepParser.get_gold_conf(s)
-            if GreedyDepParser.non_projective(gold_conf) is False:
-                gold_proj.append(s)
-            else:
-                print('Skipping non-projective sentence', s)
-        return gold_proj
-
+    import argparse
     import fileio
     import fx
-    import sys
-    import os.path
-    if len(sys.argv) < 3:
-        sys.exit('Usage: %s <train> <dev>' % sys.argv[0])
+    
+    parser = argparse.ArgumentParser(description="Sample program showing training and testing dependency parsers")
+    parser.add_argument('--parser', help='Parser type (eager|hybrid) (default: eager)', default='eager')
+    parser.add_argument('--train', help='CONLL training file', required=True)
+    parser.add_argument('--test', help='CONLL testing file', required=True)
+    parser.add_argument('--fx', help='Feature extractor', default='ex')
+    parser.add_argument('--n', help='Number of passes over training data', default=15)
+    parser.add_argument('-v', action='store_true')
+    opts = parser.parse_args()
+    
+    def filter_non_projective(gold):
+            gold_proj = []
+            for s in gold:
+                gold_conf = GreedyDepParser.get_gold_conf(s)
+                if GreedyDepParser.non_projective(gold_conf) is False:
+                    gold_proj.append(s)
+                elif opts.v is True:
+                    print('Skipping non-projective sentence', s)
+            return gold_proj
 
-    ts = sys.argv[1]
-    ds = sys.argv[2]
-    if not os.path.exists(ts):
-        sys.exit('ERROR: Training set %s was not found!' % sys.argv[1])
+    # Defaults
+    feature_extractor = fx.ex
+    Parser = ArcEagerDepParser
+    
+    if opts.fx == 'baseline':
+        print 'Selecting baseline feature extractor'
+        feature_extractor = fx.ex
 
-    if not os.path.exists(ds):
-        sys.exit('ERROR: Dev test set %s was not found!' % sys.argv[2])
+    
+    if opts.parser == 'hybrid':
+        print 'Using arc-hybrid parser'
+        Parser = ArcHybridDepParser
 
-    gold = filter_non_projective(fileio.read_conll_deps(ts))
+    gold = filter_non_projective(fileio.read_conll_deps(opts.train))
     model = Classifier({}, [0, 1, 2, 3])
-    parser = ArcEagerDepParser(model, fx.baseline)
-
-    for i in range(0, 15):
+    
+    parser = Parser(model, feature_extractor)
+    print('performing %d iterations' % opts.n)
+    for i in range(0, opts.n):
         correct_iter = 0
         all_iter = 0
         random.shuffle(gold)
@@ -430,7 +574,7 @@ if __name__ == '__main__':
 
         print('fraction of correct transitions iteration %d: %d/%d = %f' % (i, correct_iter, all_iter, correct_iter/float(all_iter)))
     parser.avg_weights()
-    test = filter_non_projective(fileio.read_conll_deps(ds))
+    test = filter_non_projective(fileio.read_conll_deps(opts.test))
 
     all_arcs = 0
     correct_arcs = 0
