@@ -531,7 +531,7 @@ if __name__ == '__main__':
     parser.add_argument('--train', help='CONLL training file', required=True)
     parser.add_argument('--test', help='CONLL testing file', required=True)
     parser.add_argument('--fx', help='Feature extractor', default='ex')
-    parser.add_argument('--n', help='Number of passes over training data', default=15)
+    parser.add_argument('--n', help='Number of passes over training data', default=15, type=int)
     parser.add_argument('-v', action='store_true')
     opts = parser.parse_args()
     
@@ -550,12 +550,12 @@ if __name__ == '__main__':
     Parser = ArcEagerDepParser
     
     if opts.fx == 'baseline':
-        print 'Selecting baseline feature extractor'
+        print('Selecting baseline feature extractor')
         feature_extractor = fx.ex
 
     
     if opts.parser == 'hybrid':
-        print 'Using arc-hybrid parser'
+        print('Using arc-hybrid parser')
         Parser = ArcHybridDepParser
 
     gold = filter_non_projective(fileio.read_conll_deps(opts.train))
