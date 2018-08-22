@@ -11,7 +11,7 @@ def read_conll_deps(f):
     sentences = []
 
     with open(f) as csvfile:
-        reader = csv.reader(csvfile, delimiter='\t')
+        reader = csv.reader(csvfile, delimiter='\t', quoting=csv.QUOTE_NONE)
 
         sentence = []
 
