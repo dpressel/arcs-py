@@ -196,7 +196,7 @@ class ArcEagerDepParser(GreedyDepParser):
         self.transition_funcs[ArcEagerDepParser.REDUCE] = ArcEagerDepParser.reduce
 
     def initial(self, sentence):
-        return Configuration(range(len(sentence)) + [len(sentence)], sentence)
+        return Configuration(list(range(len(sentence))) + [len(sentence)], sentence)
 
     def legal(self, conf):
         """
@@ -224,7 +224,7 @@ class ArcEagerDepParser(GreedyDepParser):
             s = conf.stack[-1]
 
             # if the s is already a dependent, we cannot left-arc
-            if len(filter(lambda hd: s == hd[1], conf.arcs)) > 0:
+            if len(list(filter(lambda hd: s == hd[1], conf.arcs))) > 0:
                 left_ok = False
             else:
                 reduce_ok = False
@@ -310,8 +310,8 @@ class ArcEagerDepParser(GreedyDepParser):
         b_deps = gold_conf.deps[b]
 
         # (b, k) and k in S
-        b_k_in_stack = filter(lambda dep: dep in conf.stack, b_deps)
-        b_k_final = filter(lambda dep: dep not in k_heads, b_k_in_stack)
+        b_k_in_stack = list(filter(lambda dep: dep in conf.stack, b_deps))
+        b_k_final = list(filter(lambda dep: dep not in k_heads, b_k_in_stack))
 
         # s is not gold head but real head (k) not in stack or buffer
         # and no gold deps of b in S -- (b, k) doesnt exist on stack
@@ -403,7 +403,7 @@ class ArcHybridDepParser(GreedyDepParser):
 
     def initial(self, sentence):
         self.root = len(sentence)
-        return Configuration(range(len(sentence)) + [len(sentence)], sentence)
+        return Configuration(list(range(len(sentence))) + [len(sentence)], sentence)
         # return Configuration([self.root] + range(len(sentence)), sentence)
 
     def legal(self, conf):
@@ -485,7 +485,7 @@ class ArcHybridDepParser(GreedyDepParser):
         # Cost is the number of arcs in T of the form (s0, d) and (h, s0) for h in H and d in D
         if b in gold_conf.heads and gold_conf.heads[b] in conf.stack[0:-1]:
             return False
-        ll = len(filter(lambda dep: dep in conf.stack, gold_conf.deps[b]))
+        ll = len(list(filter(lambda dep: dep in conf.stack, gold_conf.deps[b])))
         return ll == 0
 
     @staticmethod
