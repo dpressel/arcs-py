@@ -7,7 +7,7 @@ LABEL = 3
 
 
 def head_children(arcs, h, sent):
-    children = filter(lambda x: x[0] == h, arcs)
+    children = list(filter(lambda x: x[0] == h, arcs))
     if len(children):
         lc1 = min(d for (h, d) in children)
         rc1 = max(d for (h, d) in children)
