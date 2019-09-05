@@ -458,7 +458,7 @@ class ArcHybridDepParser(GreedyDepParser):
         s0 = conf.stack[-1]
         s1 = len(conf.stack) > 2 and conf.stack[-2] or None
 
-        if gold_conf.deps[s0] in conf.buffer:
+        if any(dep in conf.buffer for dep in gold_conf.deps[s0]):
             return False
 
         H = conf.buffer[1:] + [s1]
