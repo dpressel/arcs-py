@@ -1,6 +1,6 @@
 import random
 from collections import defaultdict
-
+from classifier import AveragedPerceptronClassifier
 
 class Configuration:
     def __init__(self, buf, s):
@@ -16,30 +16,7 @@ class GoldConfiguration:
         self.deps = defaultdict(lambda: [])
 
 
-class Classifier:
-    def __init__(self, weights, labels):
-        self.weights = weights
-        self.labels = labels
-
-    def score(self, fv):
-
-        scores = dict((label, 0) for label in self.labels)
-
-        for k, v in fv.items():
-
-            if v == 0:
-                continue
-            if k not in self.weights:
-                continue
-
-            wv = self.weights[k]
-
-            for label, weight in wv.items():
-                scores[label] += weight * v
-
-        return scores
-
-
+            
 class GreedyDepParser:
 
     SHIFT = 0
@@ -54,10 +31,8 @@ class GreedyDepParser:
         self.model = m
         self.fx = feature_extractor
         self.transition_funcs = {}
-        self.train_tick = 0
-        self.train_last_tick = defaultdict(lambda: 0)
-        self.train_totals = defaultdict(lambda: 0)
-
+        self.trainer = None
+        
     def initial(self, sentence):
         pass
 
@@ -70,39 +45,9 @@ class GreedyDepParser:
 
     LUT = ["SHIFT", 'RIGHT', 'LEFT', 'REDUCE']
 
-    def update(self, truth, guess, features):
-        def update_feature_label(label, fj, v):
-            wv = 0
-
-            try:
-                wv = self.model.weights[fj][label]
-            except KeyError:
-                if fj not in self.model.weights:
-                    self.model.weights[fj] = {}
-                self.model.weights[fj][label] = 0
-
-            t_delt = self.train_tick - self.train_last_tick[(fj, label)]
-            self.train_totals[(fj, label)] += t_delt * wv
-            self.model.weights[fj][label] += v
-            self.train_last_tick[(fj, label)] = self.train_tick
-
-        self.train_tick += 1
-        for f in features.items():
-            update_feature_label(truth, f[0], 1.0)
-            update_feature_label(guess, f[0], -1.0)
-
     def dyn_oracle(self, gold_conf, conf, legal_transitions):
         pass
 
-    def avg_weights(self):
-        for fj in self.model.weights:
-            for label in self.model.weights[fj]:
-                total = self.train_totals[(fj, label)]
-                t_delt = self.train_tick - self.train_last_tick[(fj, label)]
-                total += t_delt * self.model.weights[fj][label]
-                avg = round(total / float(self.train_tick))
-                if avg:
-                    self.model.weights[fj][label] = avg
 
     @staticmethod
     def get_gold_conf(sentence):
@@ -145,6 +90,9 @@ class GreedyDepParser:
         return False
 
     def train(self, sentence, iter_num):
+        if self.trainer is None:
+            self.trainer = self.model.create_trainer()
+        
         conf = self.initial(sentence)
         gold_conf = GreedyDepParser.get_gold_conf(sentence)
         train_correct = train_all = 0
@@ -165,7 +113,7 @@ class GreedyDepParser:
 
             if t_p not in zero_cost:
                 t_o = max(zero_cost, key=lambda p: scores[p])
-                self.update(t_o, t_p, features)
+                self.trainer.update(t_o, t_p, features)
                 self.explore(t_o, t_p, conf, iter_num)
 
             else:
@@ -559,7 +507,7 @@ if __name__ == '__main__':
         Parser = ArcHybridDepParser
 
     gold = filter_non_projective(fileio.read_conll_deps(opts.train))
-    model = Classifier({}, [0, 1, 2, 3])
+    model = AveragedPerceptronClassifier([0, 1, 2, 3])
     
     parser = Parser(model, feature_extractor)
     print('performing %d iterations' % opts.n)
@@ -573,7 +521,7 @@ if __name__ == '__main__':
             all_iter += all_s
 
         print('fraction of correct transitions iteration %d: %d/%d = %f' % (i, correct_iter, all_iter, correct_iter/float(all_iter)))
-    parser.avg_weights()
+    parser.trainer.finish()
     test = filter_non_projective(fileio.read_conll_deps(opts.test))
 
     all_arcs = 0
