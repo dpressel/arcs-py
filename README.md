@@ -9,4 +9,4 @@ __Goldberg, Yoav, and Joakim Nivre. "A Dynamic Oracle for Arc-Eager Dependency P
 
 The sample data comes from Question Bank and a sample of PTB provided by NLTK in the corpora section, which I converted to a labeled dependency CONLL file using LTH converter and David Vadas' patches.  The sample data also contains non-projective parses, which are ignored by the sample driver program.
 
-If you are looking for a modern flexible dependency parser that supports non-projective parses and is near SoTA, you probably want to use a more recent neural parser architecture like the one in [mead](https://github.com/dpressel/mead-baseline)
+If you are looking for a modern flexible dependency parser that supports non-projective parses and is near SoTA, you probably want to use a neural parser architecture like the one in [mead](https://github.com/dpressel/mead-baseline)
